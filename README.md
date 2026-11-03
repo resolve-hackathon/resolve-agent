@@ -47,13 +47,14 @@ URL; it is not a claim that issue 182 exists in your repository.
 | Piece | Starter behavior |
 | --- | --- |
 | Triage | Deterministic customer/component routing; Discord identity comes from the sender mapping, never message text |
-| Researcher | Parameterized SQL over a local fallback snapshot of four logical sources |
+| Researcher | Parameterized SQL over four sources via Zetaris REST, or an explicit local SQLite fallback |
 | Hypothesis | Offline rule baseline or optional Nemotron/OpenAI-compatible JSON call |
 | Verifier | Checks exact claim values, source IDs, account version, remedy applicability, and action eligibility; compatible mode also runs an independent model audit |
 | Resolver | Four fixed action handlers, dry run by default; live Discord/GitHub implementations verify returned receipts |
 | Retry | At most one additional research pass using verification gaps and symptom text |
 | State/log | One inspectable JSON object per question; Discord runs append JSONL locally |
 | Duplicate protection | Live actions are journaled by question ID; uncertain/failed POSTs are not automatically replayed |
+| Impact | SQL counts version/OS exposure for known issues and release population for new regressions; summaries appear only in engineer payloads |
 | Seed data | 50 synthetic accounts, 10 authored KB articles, 6 releases, 10 issue fixtures |
 | Checks | Four end-to-end outcome tests, ten offline evaluation cases, and failure/verification tests |
 
@@ -125,12 +126,21 @@ For CLI live actions use `ask --live --question-id a-stable-report-id ...`.
 Use the same ID for the same report to avoid duplicate remote actions. After a
 timeout, inspect both the action journal and remote service before retrying.
 
+## Impact analysis and the Zetaris video rehearsal
+
+The R1–R5 examples are implemented, including evidence provenance and
+`zetaris/impact_handtest.sql`. See [setup, expected counts, and safe data
+restoration](docs/IMPACT_ANALYSIS.md). Existing installations need to reload the
+accounts/issues fixtures and refresh those two registered table schemas once.
+Report counts persist locally and include verified dry-run reports.
+
 ## Files to work on next
 
 ```text
 resolve/state.py          Shared task state and action allowlist
 resolve/agent.py          Five-role sequence and bounded retry
 resolve/research.py       Seed importer, SQL fallback, federated connection seam
+resolve/impact.py         Exposure summaries and distinct-customer report ledger
 resolve/reasoning.py      Offline baseline, prompts, hard verifier, model adapter
 resolve/actions.py        Four actions, receipts, persistent action journal
 resolve/discord_bot.py    One-server Discord entry point
@@ -147,9 +157,9 @@ are ignored by Git.
 
 ## Boundaries and remaining work
 
-This is a working starter, not a complete hackathon submission. Live sponsor
-services were not exercised. Zetaris federation and Meterless SDK/service calls
-still need your tenant details and the event's confirmed requirements. The
+This is a working starter, not a complete hackathon submission. Zetaris research
+and impact queries were exercised against a local Docker deployment. Meterless
+SDK/service calls still need integration and the event's confirmed requirements. The
 current explicit shared-state design is inspired by the plan's World Model
 pattern; it does not claim to call Meterless. See
 [integration notes](docs/INTEGRATIONS.md) for the exact handoff points.

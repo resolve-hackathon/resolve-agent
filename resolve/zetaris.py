@@ -13,6 +13,8 @@ REST call shape used by the hackathon's local Zetaris platform:
     returns: {"headers": [...], "data": [[...], ...], "total": n, "timeUsed": ms}
 """
 
+from __future__ import annotations
+
 import json
 import os
 import re
@@ -126,13 +128,15 @@ class _Connection:
         pass
 
 
-def zetaris_researcher():
+def zetaris_researcher(reports_path: Path | None = None):
+    from .impact import ReportLedger
     from .research import SQLResearcher
 
     client = ZetarisClient.from_env()
     query = (ROOT / "sql/research_zetaris.sql").read_text()
     identity = (ROOT / "sql/identity_zetaris.sql").read_text()
-    return SQLResearcher(lambda: _Connection(client), query, identity)
+    return SQLResearcher(lambda: _Connection(client), query, identity,
+                         via="zetaris", reports=ReportLedger(reports_path))
 
 
 def make_researcher(database: Path):
@@ -141,7 +145,7 @@ def make_researcher(database: Path):
 
     mode = os.getenv("RESOLVE_RESEARCH", "local")
     if mode == "zetaris":
-        return zetaris_researcher()
+        return zetaris_researcher(database.with_name("zetaris-reports.sqlite"))
     if mode != "local":
         raise ValueError("RESOLVE_RESEARCH must be local or zetaris")
     return SQLResearcher.local(database)

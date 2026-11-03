@@ -30,20 +30,22 @@ def action_material(state: TaskState) -> tuple[str, dict]:
     if state.action == Action.POST_FIX:
         steps = "\n".join(f"{i}. {step}" for i, step in enumerate(selected.record["steps"], 1))
         return f"{steps}\n\n{citation}", {}
+    impact = "\n" + (state.impact.summary() if state.impact is not None else
+                      "Impact unavailable; no exposure count was established.")
     if state.action == Action.LINK_ISSUE:
         return f"{selected.record['workaround']}\n\n{citation}", {
             "number": selected.record["number"], "url": selected.record["url"],
             "comment": f"Resolve report {state.question_id}\n"
                        f"Client: {account.record['client_version']}\n"
                        f"Reported symptoms (untrusted customer text):\n{state.message}\n"
-                       f"Evidence: {', '.join(state.hypothesis.supporting_ids)}",
+                       f"Evidence: {', '.join(state.hypothesis.supporting_ids)}" + impact,
         }
     body = (f"Resolve report: {state.question_id}\n"
             f"Component: {state.component}\nClient: {account.record['client_version']}\n\n"
             f"## Customer report (untrusted text)\n{state.message}\n\n"
             "Reproduction steps have not been independently reproduced; follow up with reporter.\n\n"
             f"## Corroborating release note\n{selected.record['body']}\n\n{citation}\n"
-            f"Evidence rows: {', '.join(state.hypothesis.supporting_ids)}")
+            f"Evidence rows: {', '.join(state.hypothesis.supporting_ids)}" + impact)
     return "A bug report has been opened for the support team to investigate.", {
         "title": f"[Resolve] {state.component} regression on {account.record['client_version']}",
         "body": body, "labels": [f"component:{state.component}"],

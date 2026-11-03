@@ -1,47 +1,42 @@
 # Integration handoff
 
-## Zetaris: pending tenant wiring
+## Zetaris: REST research and impact queries implemented
 
-`SQLResearcher.local()` is an honest local SQLite fallback. It copies authored
-demo files into a local snapshot and must not be described as federation.
+Set `RESOLVE_RESEARCH=zetaris` with `ZETARIS_REST_URL`, `ZETARIS_API_KEY`, and
+`ZETARIS_ORG_ID` in the ignored `.env`. `make_researcher` selects this adapter for
+CLI and Discord research. The REST adapter sends fixed SELECT/WITH statements
+through `/sql-editor/sqls/run`, validates results, rejects truncated responses,
+and never accepts model-generated SQL. A Zetaris failure does not fall back to
+SQLite. `SQLResearcher.local()` remains an explicit offline snapshot, with
+`provenance.via=local` rather than `zetaris`.
 
-The integration seam is `SQLResearcher(connect, query, identity_query)`.
-`connect` returns a connection with DB-API-style `cursor()`, `execute()`,
-`fetchall()`/`fetchone()`, and `close()` methods. Provide a wrapper if your Zetaris
-client uses a different shape. Register separate source systems in your tenant
-and expose virtual views with these normalized columns:
+Four separate demo PostgreSQL databases can be loaded with
+`zetaris/export_csv.py` and `zetaris/load_postgres.sh`, then registered with
+`zetaris/register.sql`. Their normalized columns are:
 
-| View | Columns used by the starter query |
+| View | Columns used by research and impact |
 | --- | --- |
-| accounts | row_id, discord_id, client_version, last_working_version, payload |
+| accounts | row_id, discord_id, client_version, last_working_version, payload, plan, os |
 | kb | row_id, component, payload |
 | releases | row_id, component, payload |
-| issues | row_id, component, state, affects_version, payload |
+| issues | row_id, component, state, affects_version, payload, platform |
 
-`payload` is a JSON string containing the source record, with fields matching the
-local fixtures. Return `(source, row_id, payload)` rows. Preserve stable original
-source IDs and source URLs. Use virtual views over the separate KB, account,
-release, and GitHub sources; do not upload the combined fallback snapshot and
-call it a federated join.
+`payload` is the JSON source record. Research returns `(source, row_id, payload)`
+rows from component-scoped queries, then filters stable version ranges and
+symptoms in Python. Original source IDs and URLs are preserved. The impact query
+joins accounts and issues on version and groups by plan/OS inside Zetaris; the
+new-regression query counts the verified client's version population without
+claiming confirmed exposure. Both use fixed SQL with bound values.
 
-Adapt the view names and bound-parameter placeholders in `sql/research.sql` for
-the connection your tenant actually provides. Parameter order is customer ID,
-component, component, component. Also adapt `identity_query`; its only parameter
-is Discord user ID. Never interpolate message text or let a model generate SQL.
-The current SQL returns component-scoped candidate rows; Python then filters
-stable version ranges, the last-working-to-current release window, and symptom
-relevance. Move those filters into virtual views if useful after the basic join
-works. The retry expands body search with symptom terms and records its prior
-gaps in the log; it is not a second arbitrary model SQL query.
+These are synthetic source fixtures, not a continuous GitHub/KB ingestion
+pipeline. Local Docker REST queries, source counts, query plans, and R1–R5 were
+verified on 2026-11-03. See [impact setup and rehearsal](IMPACT_ANALYSIS.md),
+including the one-time metadata refresh required by an older installation.
 
-Once your tenant connection works, replace the `SQLResearcher.local(database)`
-construction in `build_agent` and the Discord identity researcher with your
-configured researcher. Keep the default local path for the clean-clone demo.
-No undocumented Zetaris HTTP endpoint or unverified driver name is assumed.
-
-Start with Zetaris's official [connection overview](https://kbase.zetaris.com/knowledge/connecting-to-zetaris)
-and [API access guide](https://kbase.zetaris.com/knowledge/accessing-zetaris-using-api)
-to obtain the correct tenant connection and authentication details.
+The DB-API seam remains `SQLResearcher(connect, query, identity_query, via=...)`.
+A custom connection supplies `cursor()`, `execute()`, `fetchall()`/`fetchone()`, and
+`close()`. Tenant-specific virtual sources should preserve these normalized
+columns. Never interpolate customer text or allow a model to supply SQL.
 
 ## NVIDIA Nemotron: optional compatible transport implemented
 
