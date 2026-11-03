@@ -7,6 +7,7 @@ import csv
 import sqlite3
 import sys
 import tempfile
+from contextlib import closing
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,10 +16,10 @@ from resolve.config import data_dir  # noqa: E402
 from resolve.research import seed_snapshot  # noqa: E402
 
 TABLES = {
-    "accounts": ["row_id", "discord_id", "client_version", "last_working_version", "payload"],
+    "accounts": ["row_id", "discord_id", "client_version", "last_working_version", "payload", "plan", "os"],
     "kb": ["row_id", "component", "payload"],
     "releases": ["row_id", "component", "payload"],
-    "issues": ["row_id", "component", "state", "affects_version", "payload"],
+    "issues": ["row_id", "component", "state", "affects_version", "payload", "platform"],
 }
 
 out = ROOT / "runtime" / "zetaris"
@@ -26,7 +27,7 @@ out.mkdir(parents=True, exist_ok=True)
 with tempfile.TemporaryDirectory() as tmp:
     db = Path(tmp) / "export.sqlite"
     seed_snapshot(data_dir(), db)
-    with sqlite3.connect(db) as connection:
+    with closing(sqlite3.connect(db)) as connection:
         for table, columns in TABLES.items():
             rows = connection.execute(f"SELECT {', '.join(columns)} FROM {table}").fetchall()
             with (out / f"{table}.csv").open("w", newline="", encoding="utf-8") as stream:

@@ -1,5 +1,7 @@
 """Five sequential roles with a strict maximum of one research retry."""
 
+import sqlite3
+
 from .reasoning import triage, verify_structure
 from .state import Action, Proposal, TaskState
 from .transport import ServiceError
@@ -37,6 +39,18 @@ class Agent:
             if state.verified:
                 break
         state.action = state.hypothesis.action if state.verified else Action.ESCALATE
+        if state.action in {Action.LINK_ISSUE, Action.OPEN_ISSUE}:
+            try:
+                enrich = getattr(self.researcher, "impact", None)
+                if enrich is None:
+                    raise ValueError("Researcher does not support impact")
+                state.impact = enrich(state)
+                state.record_event("impact", via=state.impact.via, total=state.impact.total,
+                                   exposed=state.impact.exposed, reported=state.impact.reported)
+            except (ServiceError, ValueError, OSError, sqlite3.Error) as error:
+                # Enrichment failure must not invent a count or discard a verified remedy.
+                state.impact_error = f"Impact unavailable ({type(error).__name__})"
+                state.record_event("impact", error=state.impact_error)
         try:
             state.action_result, state.reply_text = self.actions.execute(state)
         except (ServiceError, ValueError, OSError) as error:

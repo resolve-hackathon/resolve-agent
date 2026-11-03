@@ -1,0 +1,54 @@
+== Parsed Logical Plan ==
+'Sort ['a.plan ASC NULLS FIRST, 'a.os ASC NULLS FIRST], true
++- 'Aggregate ['t.version, 't.platform, 'a.plan, 'a.os], ['t.version, 't.platform, 'a.plan, 'a.os, 'COUNT(1) AS accounts#1144, 'SUM(CASE WHEN isnull('t.platform) THEN null WHEN (('LOWER('t.platform) = all) OR ('LOWER('a.os) = 'LOWER('t.platform))) THEN 1 ELSE 0 END) AS exposed#1145]
+   +- 'Join Inner, ('a.client_version = 't.version)
+      :- 'SubqueryAlias t
+      :  +- 'Project ['affects_version AS version#1142, 'NULLIF('TRIM('platform), ) AS platform#1143]
+      :     +- 'Filter (('row_id = GH-182) AND ('state = open))
+      :        +- 'UnresolvedRelation [issues_src, issues], [], false
+      +- 'SubqueryAlias a
+         +- 'UnresolvedRelation [accounts_src, accounts], [], false
+
+== Analyzed Logical Plan ==
+version: string, platform: string, plan: string, os: string, accounts: bigint, exposed: bigint
+Sort [plan#1157 ASC NULLS FIRST, os#1158 ASC NULLS FIRST], true
++- Aggregate [version#1142, platform#1143, plan#1157, os#1158], [version#1142, platform#1143, plan#1157, os#1158, count(1) AS accounts#1144L, sum(CASE WHEN isnull(platform#1143) THEN cast(null as int) WHEN ((lower(platform#1143) = all) OR (lower(os#1158) = lower(platform#1143))) THEN 1 ELSE 0 END) AS exposed#1145L]
+   +- Join Inner, (client_version#1154 = version#1142)
+      :- SubqueryAlias t
+      :  +- Project [affects_version#1149 AS version#1142, nullif(trim(platform#1151, None), ) AS platform#1143]
+      :     +- Filter ((row_id#1146 = GH-182) AND (state#1148 = open))
+      :        +- SubqueryAlias issues
+      :           +- LightningLogicalRelation[row_id#1146,component#1147,state#1148,affects_version#1149,payload#1150,platform#1151] InsertableJDBCTableRelation(JDBCDataSourceConnection(JDBCDataSourceMeta(********(masked))),Some(public),Some(ISSUES_SRC),ISSUES,issues,List(JDBCRangePartition(None,0)),StructType(StructField(row_id,StringType,true),StructField(component,StringType,true),StructField(state,StringType,true),StructField(affects_version,StringType,true),StructField(payload,StringType,true),StructField(platform,StringType,true)),None,None,org.apache.spark.sql.SQLContext@6f10e512)
+      +- SubqueryAlias a
+         +- SubqueryAlias accounts
+            +- LightningLogicalRelation[row_id#1152,discord_id#1153,client_version#1154,last_working_version#1155,payload#1156,plan#1157,os#1158] InsertableJDBCTableRelation(JDBCDataSourceConnection(JDBCDataSourceMeta(********(masked))),Some(public),Some(ACCOUNTS_SRC),ACCOUNTS,accounts,List(JDBCRangePartition(None,0)),StructType(StructField(row_id,StringType,true),StructField(discord_id,StringType,true),StructField(client_version,StringType,true),StructField(last_working_version,StringType,true),StructField(payload,StringType,true),StructField(plan,StringType,true),StructField(os,StringType,true)),None,None,org.apache.spark.sql.SQLContext@6f10e512)
+
+== Optimized Logical Plan ==
+Sort [plan#1157 ASC NULLS FIRST, os#1158 ASC NULLS FIRST], true
++- Aggregate [version#1142, platform#1143, plan#1157, os#1158], [version#1142, platform#1143, plan#1157, os#1158, count(1) AS accounts#1144L, sum(CASE WHEN isnull(platform#1143) THEN null WHEN ((lower(platform#1143) = all) OR (lower(os#1158) = lower(platform#1143))) THEN 1 ELSE 0 END) AS exposed#1145L]
+   +- Project [version#1142, platform#1143, plan#1157, os#1158]
+      +- Join Inner, (client_version#1154 = version#1142)
+         :- Project [affects_version#1149 AS version#1142, if ((trim(platform#1151, None) = )) null else trim(platform#1151, None) AS platform#1143]
+         :  +- Filter (((isnotnull(row_id#1146) AND isnotnull(state#1148)) AND ((row_id#1146 = GH-182) AND (state#1148 = open))) AND isnotnull(affects_version#1149))
+         :     +- LightningLogicalRelation[row_id#1146,component#1147,state#1148,affects_version#1149,payload#1150,platform#1151] InsertableJDBCTableRelation(JDBCDataSourceConnection(JDBCDataSourceMeta(********(masked))),Some(public),Some(ISSUES_SRC),ISSUES,issues,List(JDBCRangePartition(None,0)),StructType(StructField(row_id,StringType,true),StructField(component,StringType,true),StructField(state,StringType,true),StructField(affects_version,StringType,true),StructField(payload,StringType,true),StructField(platform,StringType,true)),None,None,org.apache.spark.sql.SQLContext@6f10e512)
+         +- Project [client_version#1154, plan#1157, os#1158]
+            +- Filter isnotnull(client_version#1154)
+               +- LightningLogicalRelation[row_id#1152,discord_id#1153,client_version#1154,last_working_version#1155,payload#1156,plan#1157,os#1158] InsertableJDBCTableRelation(JDBCDataSourceConnection(JDBCDataSourceMeta(********(masked))),Some(public),Some(ACCOUNTS_SRC),ACCOUNTS,accounts,List(JDBCRangePartition(None,0)),StructType(StructField(row_id,StringType,true),StructField(discord_id,StringType,true),StructField(client_version,StringType,true),StructField(last_working_version,StringType,true),StructField(payload,StringType,true),StructField(plan,StringType,true),StructField(os,StringType,true)),None,None,org.apache.spark.sql.SQLContext@6f10e512)
+
+== Physical Plan ==
+AdaptiveSparkPlan isFinalPlan=false
++- Sort [plan#1157 ASC NULLS FIRST, os#1158 ASC NULLS FIRST], true, 0
+   +- Exchange rangepartitioning(plan#1157 ASC NULLS FIRST, os#1158 ASC NULLS FIRST, 200), ENSURE_REQUIREMENTS, [plan_id=2023]
+      +- HashAggregate(keys=[version#1142, platform#1143, plan#1157, os#1158], functions=[count(1), sum(CASE WHEN isnull(platform#1143) THEN null WHEN ((lower(platform#1143) = all) OR (lower(os#1158) = lower(platform#1143))) THEN 1 ELSE 0 END)], output=[version#1142, platform#1143, plan#1157, os#1158, accounts#1144L, exposed#1145L])
+         +- HashAggregate(keys=[version#1142, platform#1143, plan#1157, os#1158], functions=[partial_count(1), partial_sum(CASE WHEN isnull(platform#1143) THEN null WHEN ((lower(platform#1143) = all) OR (lower(os#1158) = lower(platform#1143))) THEN 1 ELSE 0 END)], output=[version#1142, platform#1143, plan#1157, os#1158, count#1169L, sum#1170L])
+            +- Project [version#1142, platform#1143, plan#1157, os#1158]
+               +- SortMergeJoin [version#1142], [client_version#1154], Inner
+                  :- Sort [version#1142 ASC NULLS FIRST], false, 0
+                  :  +- Exchange hashpartitioning(version#1142, 200), ENSURE_REQUIREMENTS, [plan_id=2014]
+                  :     +- Project [affects_version#1149 AS version#1142, if ((trim(platform#1151, None) = )) null else trim(platform#1151, None) AS platform#1143]
+                  :        +- Filter ((((isnotnull(row_id#1146) AND isnotnull(state#1148)) AND (row_id#1146 = GH-182)) AND (state#1148 = open)) AND isnotnull(affects_version#1149))
+                  :           +- Scan InsertableJDBCTableRelation(JDBCDataSourceConnection(JDBCDataSourceMeta(********(masked))),Some(public),Some(ISSUES_SRC),ISSUES,issues,List(JDBCRangePartition(None,0)),StructType(StructField(row_id,StringType,true),StructField(component,StringType,true),StructField(state,StringType,true),StructField(affects_version,StringType,true),StructField(payload,StringType,true),StructField(platform,StringType,true)),None,None,org.apache.spark.sql.SQLContext@6f10e512) ISSUES_SRC.issues[affects_version#1149,platform#1151,row_id#1146,state#1148] PushedFilters: [EqualTo(row_id,GH-182), IsNotNull(affects_version), IsNotNull(state), EqualTo(state,open), IsNot..., ReadSchema: struct<affects_version:string,platform:string,row_id:string,state:string>
+                  +- Sort [client_version#1154 ASC NULLS FIRST], false, 0
+                     +- Exchange hashpartitioning(client_version#1154, 200), ENSURE_REQUIREMENTS, [plan_id=2015]
+                        +- Filter isnotnull(client_version#1154)
+                           +- Scan InsertableJDBCTableRelation(JDBCDataSourceConnection(JDBCDataSourceMeta(********(masked))),Some(public),Some(ACCOUNTS_SRC),ACCOUNTS,accounts,List(JDBCRangePartition(None,0)),StructType(StructField(row_id,StringType,true),StructField(discord_id,StringType,true),StructField(client_version,StringType,true),StructField(last_working_version,StringType,true),StructField(payload,StringType,true),StructField(plan,StringType,true),StructField(os,StringType,true)),None,None,org.apache.spark.sql.SQLContext@6f10e512) ACCOUNTS_SRC.accounts[client_version#1154,plan#1157,os#1158] PushedFilters: [IsNotNull(client_version)], ReadSchema: struct<client_version:string,plan:string,os:string>

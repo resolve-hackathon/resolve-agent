@@ -9,11 +9,13 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 from typing import Callable, Protocol
 
 from .config import ROOT
-from .state import Evidence, TaskState
+from .impact import ReportLedger, parse_impact
+from .state import Action, Evidence, TaskState
 
 
 def version(value: str) -> tuple[int, int, int]:
@@ -58,7 +60,7 @@ class Researcher(Protocol):
 def seed_snapshot(data: Path, database: Path) -> None:
     """Build a reproducible local snapshot from separately authored source files."""
     database.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection, connection:
         connection.executescript("""
             CREATE TABLE IF NOT EXISTS accounts (
                 row_id TEXT PRIMARY KEY, discord_id TEXT UNIQUE,
@@ -71,14 +73,22 @@ def seed_snapshot(data: Path, database: Path) -> None:
                 row_id TEXT PRIMARY KEY, component TEXT, state TEXT,
                 affects_version TEXT, payload TEXT NOT NULL);
         """)
+        # Upgrade existing local snapshots without clearing the report ledger.
+        for table, columns in (("accounts", ("plan", "os")), ("issues", ("platform",))):
+            existing = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+            for column in columns:
+                if column not in existing:
+                    connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
         for table in ("accounts", "kb", "releases", "issues"):
             connection.execute(f"DELETE FROM {table}")  # constant allowlist above
         for row in json.loads((data / "accounts.json").read_text()):
             version(row["client_version"])
             version(row["last_working_version"])
-            connection.execute("INSERT INTO accounts VALUES (?, ?, ?, ?, ?)", (
+            connection.execute("INSERT INTO accounts "
+                               "(row_id, discord_id, client_version, last_working_version, payload, plan, os) "
+                               "VALUES (?, ?, ?, ?, ?, ?, ?)", (
                 row["id"], row["discord_id"], row["client_version"],
-                row["last_working_version"], json.dumps(row)))
+                row["last_working_version"], json.dumps(row), row["plan"], row["os"]))
         for path in sorted((data / "kb").glob("*.md")):
             text = path.read_text(encoding="utf-8")
             metadata, sep, body = text.partition("-->\n")
@@ -112,9 +122,11 @@ def seed_snapshot(data: Path, database: Path) -> None:
             connection.execute("INSERT INTO releases VALUES (?, ?, ?)", (
                 row["id"], row["component"], json.dumps(row)))
         for row in json.loads((data / "issues.json").read_text()):
-            connection.execute("INSERT INTO issues VALUES (?, ?, ?, ?, ?)", (
+            connection.execute("INSERT INTO issues "
+                               "(row_id, component, state, affects_version, payload, platform) "
+                               "VALUES (?, ?, ?, ?, ?, ?)", (
                 row["id"], row["component"], row["state"],
-                row["affects_version"], json.dumps(row)))
+                row["affects_version"], json.dumps(row), row.get("platform")))
 
 
 class SQLResearcher:
@@ -125,14 +137,44 @@ class SQLResearcher:
     """
 
     def __init__(self, connect: Callable, query: str | None = None,
-                 identity_query: str = "SELECT row_id FROM accounts WHERE discord_id = ?"):
+                 identity_query: str = "SELECT row_id FROM accounts WHERE discord_id = ?",
+                 *, via: str = "local", reports: ReportLedger | None = None):
+        if via not in {"local", "zetaris"}:
+            raise ValueError("Unsupported research backend")
         self.connect = connect
         self.query = query or (ROOT / "sql/research.sql").read_text()
         self.identity_query = identity_query
+        self.via = via
+        self.reports = reports if reports is not None else ReportLedger()
 
     @classmethod
     def local(cls, database: Path) -> "SQLResearcher":
-        return cls(lambda: sqlite3.connect(database))
+        return cls(lambda: sqlite3.connect(database),
+                   reports=ReportLedger(database.with_name(database.stem + "-reports.sqlite")))
+
+    def impact(self, state: TaskState):
+        if not state.verified or state.action not in {Action.LINK_ISSUE, Action.OPEN_ISSUE}:
+            raise ValueError("Impact requires a verified issue action")
+        account = next(e for e in state.evidence if e.source == "accounts")
+        selected = next(e for e in state.evidence if e.id == state.hypothesis.selected_id)
+        known = state.action == Action.LINK_ISSUE
+        if selected.source != ("issues" if known else "releases"):
+            raise ValueError("Invalid impact evidence")
+        current = account.record["client_version"]
+        query = (ROOT / ("sql/impact_zetaris.sql" if known else
+                         "sql/impact_release_zetaris.sql")).read_text()
+        if self.via == "local":
+            query = query.replace("accounts_src.", "").replace("issues_src.", "")
+        connection = self.connect()
+        try:
+            cursor = connection.cursor()
+            cursor.execute(query, (selected.row_id if known else current,))
+            impact = parse_impact(cursor.fetchall(), via=self.via, version=current, known_issue=known)
+        finally:
+            connection.close()
+        # The customer submitted a verified report even when actions are a preview.
+        impact.reported = self.reports.observe(f"{self.via}:{selected.id}:{current}", state.customer_id)
+        return impact
 
     def customer_for_discord(self, discord_id: str) -> str | None:
         connection = self.connect()
@@ -149,7 +191,7 @@ class SQLResearcher:
         try:
             cursor = connection.cursor()
             cursor.execute(self.query, (state.customer_id, *([state.component] * 3)))
-            rows = [Evidence(source, row_id, json.loads(payload))
+            rows = [Evidence(source, row_id, json.loads(payload), {"via": self.via})
                     for source, row_id, payload in cursor.fetchall()]
         finally:
             connection.close()

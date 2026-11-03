@@ -6,6 +6,8 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any
 
+from .impact import Impact
+
 
 class Action(str, Enum):
     POST_FIX = "post_fix"
@@ -19,6 +21,7 @@ class Evidence:
     source: str
     row_id: str
     record: dict[str, Any]
+    provenance: dict[str, str] = field(default_factory=lambda: {"via": "local"})
 
     @property
     def id(self) -> str:
@@ -57,9 +60,15 @@ class TaskState:
     action_result: dict[str, Any] = field(default_factory=dict)
     reply_text: str = ""
     events: list[dict[str, Any]] = field(default_factory=list)
+    impact: Impact | None = None
+    impact_error: str | None = None
 
     def snapshot(self) -> dict[str, Any]:
-        return asdict(self)
+        snapshot = asdict(self)
+        snapshot["world_context"] = {
+            "entities": [{"id": evidence.id, **asdict(evidence)} for evidence in self.evidence]
+        }
+        return snapshot
 
     def record_event(self, role: str, **details: Any) -> None:
         # Observable decisions and source IDs, not private model reasoning.
